@@ -1,0 +1,275 @@
+# ============================================
+# SalesMate — Render Blueprint
+#
+# Dán repo này vào Render → New → Blueprint. Render đọc file này và tạo service
+# một lượt, khỏi bấm tay từng cái.
+#
+#   salesmate-api-dev    API sản phẩm, nhánh develop
+#   salesmate-ai-core    lõi AI, nhánh develop
+#
+# HIỆN TẠI CHỈ DEPLOY NHÁNH develop.
+# Nhánh main đang là bản 05/08, chưa có thư mục interface/ — trỏ service vào đó
+# là build hỏng ngay. Khi nào merge develop -> main xong thì thêm môi trường
+# production: copy khối salesmate-api-dev, đổi tên thành salesmate-api, đổi
+# `branch: develop` thành `branch: main`. Xem DEPLOY.md.
+#
+# Lõi AI chỉ có một bản vì nó không giữ trạng thái (RAG đang tắt, lịch sử chat
+# do API gửi kèm mỗi request). Bớt một service là bớt một lần chờ cold start.
+#
+# Biến `sync: false` = Render KHÔNG lấy từ file này, bạn tự dán trong dashboard.
+# Secret không bao giờ nằm trong git.
+# ============================================
+
+services:
+  # ---- API sản phẩm — development (team) ----
+  - type: web
+    name: salesmate-api-dev
+    runtime: python
+    plan: free
+    region: singapore
+    branch: develop
+    rootDir: interface/backend
+    # requirements.txt thôi, KHÔNG cài requirements-dev.txt — server không cần
+    # pytest và ruff. Đây là lý do hai file đó tách nhau.
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      # Một Supabase project dùng chung cho mọi môi trường — quyết định của
+      # team. Hệ quả: sửa dữ liệu ở đây là người dùng thấy ngay. Xem DEPLOY.md.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: apartment-images
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "480"
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AI_CORE_URL
+        sync: false
+      - key: AI_CORE_TIMEOUT
+        value: "60"
+      # ⚠️ PHẢI trùng đúng giá trị AI_CORE_API_KEY của service salesmate-ai-core.
+      # Lệch một ký tự thì mọi câu hỏi trả 401 và người dùng nhận "Câu hỏi gửi
+      # lên không hợp lệ" — đúng mã lỗi, sai hoàn toàn về nguyên nhân.
+      #
+      # `sync: false` nên Render KHÔNG tự điền: dán tay cùng một chuỗi vào cả hai
+      # dashboard. Sinh bằng:
+      #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - key: AI_CORE_API_KEY
+        sync: false
+
+      # Một cờ này gác CẢ HAI endpoint tốn tiền, không chỉ chat:
+      #
+      #   /api/chat          khách 15 lượt/ngày · đã đăng nhập 120 lượt/10 phút
+      #   /api/images/modify khách 10 lượt/ngày · đã đăng nhập  40 lượt/10 phút
+      #
+      # Khách đếm theo NGÀY vì với họ đây là trần chi phí; nhân viên đếm theo 10
+      # phút vì với họ đây chỉ là phanh chống vòng lặp retry và tài khoản bị lộ —
+      # không ai gõ nổi 120 câu trong 10 phút. Xem app/core/han_muc.py.
+      #
+      # ⚠️ Đây là CÔNG TẮC KHẨN CẤP của ngày ra mắt. Bộ đếm của khách khoá theo
+      # IP, mà sau proxy của Render thì `request.client.host` CÓ THỂ là IP của
+      # proxy — lúc đó mọi khách chung một rổ và người thứ 16 bị chặn dù chưa hỏi
+      # câu nào. Nếu thấy hiện tượng đó thì đổi biến này thành "false" NGAY trong
+      # Render dashboard (hiệu lực tức thì, không cần deploy) rồi sửa sau.
+      #
+      # Đổi lại: trong lúc cờ là false, bất kỳ ai có đường link đều gọi model
+      # không giới hạn. Chỉ an toàn khi đã đặt trần chi tiêu ở console OpenAI và
+      # Ark — đó là phanh duy nhất không lách được.
+      - key: CHAT_RATE_LIMIT_ENABLED
+        value: "true"
+
+      # ---- Sinh ảnh (Modify Object) ----
+      # Ba nhà cung cấp, chọn bằng một biến. Đo thật trên cùng ảnh và cùng yêu
+      # cầu: Seedream 4.0 trả ảnh trong ~12s ở 2304x1728, gpt-image-1-mini mất
+      # 38-48s ở 1536x1024. Trên gói free của Render, chênh 30 giây là chênh
+      # giữa "khách chờ được" và "khách bỏ đi".
+      #
+      # Đánh đổi đã biết: Seedream giữ nguyên đồ vật không bị đụng tới tốt hơn
+      # hẳn (giữ cả laptop, sách, hoạ tiết gối), nhưng thỉnh thoảng THÊM đồ
+      # không ai yêu cầu — đo được 1/2 lượt ở câu "thay giá sách bằng tivi".
+      # GPT thì đếm đúng nhưng vẽ lại cả phòng và làm rơi vài món.
+      #
+      # Quay về GPT chỉ cần đổi biến này thành `openai`, không sửa code, không
+      # cần khoá mới — OPENAI_API_KEY đã có sẵn ở trên.
+      - key: IMAGE_PROVIDER
+        value: seedream
+      - key: ARK_API_KEY
+        sync: false
+
+
+  # ---- Lõi AI ----
+  # Cũng theo develop. Để branch main thì nó chạy src/ của bản 05/08, lệch 13
+  # file so với develop — API mới nói chuyện với lõi AI cũ, sai lệch rất khó lần.
+  #
+  # ⚠️ `type: web` nghĩa là service này có URL CÔNG KHAI trên Internet, và nó là
+  # chỗ tốn tiền model. Loại sạch hơn là `pserv` (private service, không có URL
+  # công khai) nhưng gói free KHÔNG có loại đó — nên chốt chặn là khoá dùng
+  # chung `AI_CORE_API_KEY` bên dưới, không phải cấu hình mạng.
+  #
+  # Nếu sau này lên gói trả phí: đổi `type` thành `pserv`, bỏ `healthCheckPath`,
+  # và trỏ AI_CORE_URL của API sản phẩm vào hostname nội bộ. Giữ nguyên khoá —
+  # hai lớp không loại trừ nhau.
+  - type: web
+    name: salesmate-ai-core
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: develop
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Dockerfile ghim cứng --port 8000; Render cấp cổng qua $PORT nên phải ghi đè.
+    dockerCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+
+      # ---- Chốt chặn (xem src/api/bao_ve.py) ----
+      # ⚠️ BẮT BUỘC, và phải trùng đúng AI_CORE_API_KEY của salesmate-api-dev.
+      # APP_ENV=production nên bỏ trống là lõi AI TỪ CHỐI MỌI REQUEST — cố ý:
+      # một cổng bảo vệ thất bại theo hướng mở thì nó không phải cổng.
+      - key: AI_CORE_API_KEY
+        sync: false
+      # Phanh tay chi phí, đếm cho cả tiến trình (mọi request đến từ một IP là
+      # API sản phẩm, nên đếm theo IP vô nghĩa ở đây). 0 = tắt. 60 rộng hơn hẳn
+      # lưu lượng thật — nó để bắt lúc có gì đó chạy loạn, không phải để chia
+      # phần cho người dùng; việc đó là của CHAT_RATE_LIMIT_ENABLED ở tầng trên.
+      - key: AI_CORE_RATE_LIMIT_PER_MINUTE
+        value: "60"
+      # ⚠️ BẮT BUỘC. Bỏ trống thì service KHÔNG KHỞI ĐỘNG được — `bootstrap.py`
+      # ném ConfigurationError và Render báo deploy hỏng.
+      #
+      # Đường rơi về ScriptedProvider đã bị bỏ vì nó hỏng câm: thiếu key là rơi
+      # về FakeEmbedder, vector 64 chiều không khớp collection 1536 chiều nên
+      # truy hồi luôn rỗng mà KHÔNG báo lỗi, còn người dùng thì nhận nội dung
+      # soạn sẵn tưởng là thật. Thà không chạy còn hơn phục vụ nội dung bịa ra.
+      - key: OPENAI_API_KEY
+        sync: false
+      # gpt-5.6-luna: $0.20/$1.20 mỗi triệu token. Chạy router (phân nhãn +
+      # giải tham chiếu từ lịch sử) và sinh gợi ý câu hỏi tiếp theo.
+      - key: LLM_MODEL_FAST
+        value: gpt-5.6-luna
+      # Model TRẢ LỜI — cùng luna với LLM_MODEL_FAST.
+      #
+      # Khâu này từng là chỗ DUY NHẤT có hồi quy thật khi hạ model: bản mini bỏ
+      # mất toà, tầng, phòng, loại căn, và bỏ luôn luật trích nguồn nên dòng
+      # "Nguồn" biến mất trên prod. Vì vậy suốt một thời gian nó bị khoá ở một
+      # model đắt hơn hẳn, kèm yêu cầu "muốn đổi thì phải ĐO trước".
+      #
+      # Đã đo, ngày 26/08/2026: chạy đủ 29 câu golden dataset trên luna, chấm
+      # bằng claude-sonnet-5 — 17 đạt / 2 không đạt, và dòng "Nguồn" xuất hiện
+      # đầy đủ ở mọi lượt có khẳng định. Xem eval/results/diem_*_batch3-sua.md.
+      # Yêu cầu "đo trước khi đổi" vẫn còn nguyên giá trị cho lần đổi sau.
+      - key: LLM_MODEL_ANSWER
+        value: gpt-5.6-luna
+      - key: LOG_LEVEL
+        value: INFO
+      # Rỗng = TẮT ghi log ra file. Mặc định của code là "logs", nhưng đĩa của
+      # Render là tạm: file mất sạch mỗi lần deploy hoặc mỗi lần service ngủ
+      # dậy, và không có cách nào đọc nó. Log của prod xem ở tab Logs.
+      - key: LOG_DIR
+        value: ""
+      # Khai tường minh vì đây là biến hỏng CÂM khi sai: chạm trần thì câu trả
+      # lời đứt giữa chừng, không lỗi nào báo ra. Câu "liệt kê các căn dưới 3
+      # tỷ" trả 21 căn đã ngốn ~950 token.
+      - key: LLM_MAX_TOKENS
+        value: "2048"
+
+      # ---- Hành vi agent ----
+      # PHẢI khai tường minh, kể cả khi trùng mặc định. Biến không khai thì
+      # Render không có gì để hiện, người đọc repo tưởng prod chạy như .env của
+      # mình. Đã mất một buổi vì đúng chuyện này: local bật vòng lặp, prod im
+      # lặng chạy False, không ai thấy cho tới khi so hai ảnh chụp màn hình.
+      #
+      # Kiểm chứng bất cứ lúc nào: GET /health/config trên service này.
+      #
+      # ⚠️ PHẢI là "false" khi ENABLE_ORCHESTRATOR bật. `build_graph` ưu tiên
+      # vòng lặp cũ, nên node `orchestrate` dựng ra rồi KHÔNG CÓ CẠNH NÀO dẫn
+      # tới — trả tiền cho ANTHROPIC_API_KEY mà không lượt nào chạy qua nó, và
+      # không lỗi nào báo ra. Hai cờ này loại trừ nhau.
+      - key: ENABLE_AGENT_LOOP
+        value: "false"
+      - key: AGENT_MAX_ITERATIONS
+        value: "2"
+      - key: ENABLE_RAG
+        value: "true"
+      - key: RERANKER
+        value: keyword
+      - key: COVERAGE_THRESHOLD
+        value: "0.35"
+      - key: LLM_TEMPERATURE
+        value: "0.3"
+      - key: RETRIEVAL_TOP_K
+        value: "20"
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+
+      # ---- Cổng leo thang (nhà cung cấp thứ hai) ----
+      # Thiếu ANTHROPIC_API_KEY thì app VẪN CHẠY ĐỦ, chỉ tắt nhánh leo thang —
+      # khác hẳn OPENAI_API_KEY nằm trên đường đi chung. Đó là lý do biến này
+      # `sync: false` mà không có gì chặn khởi động.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENABLE_ORCHESTRATOR
+        value: "true"
+      - key: ORCHESTRATOR_MODEL
+        value: claude-sonnet-5
+      # Sonnet 5 bật adaptive thinking mặc định và token suy nghĩ tính theo GIÁ
+      # ĐẦU RA, nên đây là cần ga chi phí chính. Đừng tắt hẳn thinking để tiết
+      # kiệm — tắt xong model gọi tool ít hẳn, đúng thứ orchestrator cần.
+      - key: ORCHESTRATOR_EFFORT
+        value: low
+      - key: CHE_DO_LEO_THANG
+        value: moi_luot
+      # ⚠️ BẮT BUỘC khai. Mặc định của code là 0 = KHÔNG GIỚI HẠN, và ở đây
+      # `moi_luot` nghĩa là mọi câu cần tra cứu đều gọi Sonnet 5. Đo thật:
+      # $0,0027-$0,0049 mỗi lượt khi cache ấm. Chạm trần thì cổng tự đóng và
+      # khách VẪN nhận câu trả lời từ đường tất định, không phải thông báo lỗi.
+      - key: ORCHESTRATOR_DAILY_BUDGET_USD
+        value: "1.0"
+
+      # ---- Cổng phân loại chính sách ----
+      # Chặn câu hỏi ngoài phạm vi / không an toàn TRƯỚC khi trả lời. Chạy SONG
+      # SONG với tools+retrieve nên gần như không cộng vào thời gian khách chờ:
+      # đo thật 17,6s so với 18,3s ở lượt không bị chặn.
+      #
+      # ⚠️ Cổng chạy bằng Sonnet 5 và thất bại theo hướng MỞ — hết hạn mức
+      # Anthropic là nó ngừng chặn trong im lặng, trợ lý vẫn trả lời trơn tru.
+      # Đã xảy ra thật ngày 26/08/2026. Dòng WARNING "Cổng chính sách hỏng" là
+      # tín hiệu duy nhất; hạn mức Anthropic ở đây là vấn đề AN TOÀN, không phải
+      # chuyện kế toán.
+      - key: ENABLE_CONG_CHINH_SACH
+        value: "true"
+
+      # ---- Vector store cho RAG ----
+      # Thiếu ba biến này thì qdrant_url rơi về http://localhost:6333, trong
+      # container không có Qdrant nào ⇒ mọi câu hỏi cần tài liệu trả 502
+      # "Truy vấn Qdrant thất bại".
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: documents_chunks
+
+      # ---- Postgres cho tool tồn kho ----
+      # Tool inventory_lookup đọc bảng inventory_units để trả giá và tình trạng
+      # căn theo thời gian thực. Thiếu biến này thì database_url rơi về
+      # sqlite:///./data/app.db — một file rỗng trong container, tool không tìm
+      # thấy căn nào và trợ lý trả lời "chưa đủ dữ liệu".
+      - key: DATABASE_URL
+        sync: false

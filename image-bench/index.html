@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Benchmark ảnh — gpt-image-1-mini vs Seedream 4.0</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2e38; --text: #e6e8ee;
+    --muted: #9aa1ae; --accent: #6ea8fe; --ok: #4caf7d; --bad: #e5534b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text], textarea, input[type=file] {
+    width: 100%; background: #0d0f13; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 8px 10px; font-size: 14px; font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 200px; }
+  button {
+    background: var(--accent); color: #08101f; border: none; border-radius: 6px;
+    padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 12px;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 5px 10px; font-size: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 14px; }
+  .card img { width: 100%; border-radius: 6px; background: #000; display: block; }
+  .metric { display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px; }
+  .metric .v { color: var(--muted); }
+  .err { color: var(--bad); font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+  .tieu-chi { margin-top: 12px; }
+  .tieu-chi .ten { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .tieu-chi .stars { margin-bottom: 10px; display: flex; gap: 4px; }
+  .stars button { margin: 0; padding: 4px 8px; background: #0d0f13; border: 1px solid var(--border); color: var(--text); font-weight: 400; }
+  .stars button.chon { background: var(--accent); color: #08101f; border-color: var(--accent); }
+  .note { margin-top: 8px; }
+  .saved { color: var(--ok); font-size: 12px; margin-top: 6px; display: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .badge-ok { color: var(--ok); }
+  .badge-bad { color: var(--bad); }
+  .loading { color: var(--accent); font-size: 13px; margin-top: 10px; display: none; }
+  .thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; vertical-align: middle; }
+  .warn { color: #d9a441; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Benchmark ảnh — gpt-image-1-mini vs Seedream 4.0</h1>
+<div class="sub">Công cụ cục bộ, không phải sản phẩm. Đo latency + cost tự động; bạn chấm chất lượng bằng mắt.</div>
+
+<div class="panel">
+  <div class="row">
+    <div>
+      <label>Ảnh gốc</label>
+      <input type="file" id="file" accept="image/png,image/jpeg,image/webp" />
+    </div>
+    <div>
+      <label>Nhãn lượt chạy (tuỳ chọn — VD: "sofa-nau-01")</label>
+      <input type="text" id="nhan" placeholder="tuỳ chọn" />
+    </div>
+  </div>
+  <label style="margin-top:12px">Yêu cầu chỉnh sửa (giống lời khách gõ trong widget chat)</label>
+  <textarea id="prompt" placeholder="VD: đổi sofa thành màu nâu"></textarea>
+  <button id="chay">Chạy so sánh</button>
+  <span class="loading" id="loading">Đang gọi cả hai model, chờ chút…</span>
+</div>
+
+<div class="cards" id="ketqua"></div>
+
+<div class="panel" style="margin-top:24px">
+  <h3 style="margin-top:0">Lịch sử các lượt chạy</h3>
+  <div style="overflow-x:auto">
+    <table id="bang-lich-su">
+      <thead>
+        <tr id="hang-tieu-de">
+          <th>Thời điểm</th><th>Nhãn</th><th>Prompt</th><th>Model</th>
+          <th>Latency</th><th>Cost</th><th>TB</th><th>Ghi chú</th><th>Ảnh</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+let TIEU_CHI = []; // nạp từ /api/tieu-chi — MỘT nơi duy nhất giữ tên tiêu chí
+
+function fmtMs(ms) {
+  if (ms == null) return "—";
+  return ms >= 1000 ? (ms/1000).toFixed(2) + "s" : Math.round(ms) + "ms";
+}
+function fmtCost(c, uocTinh) {
+  if (c == null) return "—";
+  return (uocTinh ? "~$" : "$") + c.toFixed(5);
+}
+
+async function naptieuChi() {
+  const res = await fetch("/api/tieu-chi");
+  TIEU_CHI = await res.json();
+  // Chèn một cột tiêu đề cho mỗi tiêu chí, ngay trước cột "TB".
+  const hang = $("#hang-tieu-de");
+  const thTB = [...hang.children].find(th => th.textContent === "TB");
+  for (const tc of TIEU_CHI) {
+    const th = document.createElement("th");
+    th.textContent = tc.nhan;
+    th.title = tc.nhan;
+    hang.insertBefore(th, thTB);
+  }
+}
+
+async function taiLichSu() {
+  const res = await fetch("/api/log");
+  const rows = await res.json();
+  const tbody = $("#bang-lich-su tbody");
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    for (const kq of r.ket_qua) {
+      const tr = document.createElement("tr");
+      const danhGia = (r.danh_gia || {})[kq.ten] || {};
+      const diem = danhGia.diem || {};
+      const cotTieuChi = TIEU_CHI.map(tc => `<td>${diem[tc.khoa] != null ? diem[tc.khoa] + "/5" : "—"}</td>`).join("");
+      tr.innerHTML = `
+        <td>${r.thoi_diem}</td>
+        <td>${r.nhan || "—"}</td>
+        <td title="${r.prompt}">${(r.prompt || "").slice(0, 30)}${r.prompt.length > 30 ? "…" : ""}</td>
+        <td class="mono">${kq.ten}</td>
+        <td>${fmtMs(kq.latency_ms)}</td>
+        <td>${fmtCost(kq.cost_usd, kq.cost_uoc_tinh)}</td>
+        ${cotTieuChi}
+        <td>${danhGia.trung_binh != null ? danhGia.trung_binh : "—"}</td>
+        <td>${danhGia.ghi_chu || "—"}</td>
+        <td>${kq.file ? `<img class="thumb" src="/anh/${kq.file}" loading="lazy" />` : (kq.thanh_cong ? "—" : `<span class="badge-bad">lỗi</span>`)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+}
+
+function renderThe(kq, runId) {
+  const div = document.createElement("div");
+  div.className = "card";
+  const anhTag = kq.anh_b64
+    ? `<img src="data:${kq.mime};base64,${kq.anh_b64}" />`
+    : `<div class="err">${kq.loi || "Không có ảnh"}</div>`;
+  div.innerHTML = `
+    <h3>${kq.ten}</h3>
+    ${anhTag}
+    <div class="metric"><span>Latency</span><span class="v">${fmtMs(kq.latency_ms)}</span></div>
+    <div class="metric"><span>Cost / ảnh</span><span class="v">${fmtCost(kq.cost_usd, kq.cost_uoc_tinh)}</span></div>
+    ${kq.cost_uoc_tinh ? '<div class="warn">Cost ước tính — API không trả breakdown token text/ảnh riêng.</div>' : ""}
+    ${kq.thanh_cong ? `
+      <div class="danh-gia" data-model="${kq.ten}" data-run="${runId}">
+        ${TIEU_CHI.map(tc => `
+          <div class="tieu-chi" data-khoa="${tc.khoa}">
+            <div class="ten">${tc.nhan}</div>
+            <div class="stars">
+              ${[1,2,3,4,5].map(n => `<button data-diem="${n}">${n}</button>`).join("")}
+            </div>
+          </div>
+        `).join("")}
+        <textarea class="note" placeholder="Ghi chú đánh giá (tuỳ chọn)"></textarea>
+        <button class="ghost luu-danh-gia">Lưu đánh giá</button>
+        <span class="saved">Đã lưu ✓</span>
+      </div>
+    ` : ""}
+  `;
+  if (kq.thanh_cong) {
+    const khungDanhGia = div.querySelector(".danh-gia");
+    const diemChon = {}; // khoá tiêu chí -> điểm 1-5
+    khungDanhGia.querySelectorAll(".tieu-chi").forEach(khung => {
+      const khoa = khung.dataset.khoa;
+      khung.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          diemChon[khoa] = Number(btn.dataset.diem);
+          khung.querySelectorAll("button").forEach(b => b.classList.toggle("chon", b === btn));
+        });
+      });
+    });
+    khungDanhGia.querySelector(".luu-danh-gia").addEventListener("click", async () => {
+      const thieu = TIEU_CHI.filter(tc => diemChon[tc.khoa] == null);
+      if (thieu.length) { alert("Chấm đủ cả " + TIEU_CHI.length + " tiêu chí đã: còn thiếu " + thieu.map(t => t.nhan).join(", ")); return; }
+      const ghiChu = khungDanhGia.querySelector(".note").value;
+      const res = await fetch("/api/rate", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ run_id: runId, ten_model: kq.ten, diem: diemChon, ghi_chu: ghiChu }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert("Lỗi lưu đánh giá: " + data.loi); return; }
+      khungDanhGia.querySelector(".saved").style.display = "inline";
+      taiLichSu();
+    });
+  }
+  return div;
+}
+
+$("#chay").addEventListener("click", async () => {
+  const fileInput = $("#file");
+  const prompt = $("#prompt").value.trim();
+  const nhan = $("#nhan").value.trim();
+  if (!fileInput.files.length) { alert("Chọn ảnh gốc trước đã."); return; }
+  if (!prompt) { alert("Nhập yêu cầu chỉnh sửa trước đã."); return; }
+
+  const fd = new FormData();
+  fd.append("anh", fileInput.files[0]);
+  fd.append("prompt", prompt);
+  fd.append("nhan", nhan);
+
+  $("#chay").disabled = true;
+  $("#loading").style.display = "inline";
+  $("#ketqua").innerHTML = "";
+  try {
+    const res = await fetch("/api/compare", { method: "POST", body: fd });
+    const data = await res.json();
+    for (const kq of data.ket_qua) {
+      $("#ketqua").appendChild(renderThe(kq, data.run_id));
+    }
+    taiLichSu();
+  } catch (e) {
+    alert("Lỗi gọi server: " + e);
+  } finally {
+    $("#chay").disabled = false;
+    $("#loading").style.display = "none";
+  }
+});
+
+(async () => {
+  await naptieuChi();
+  await taiLichSu();
+})();
+</script>
+
+</body>
+</html>

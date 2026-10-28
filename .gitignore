@@ -1,0 +1,130 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.production
+# ⚠️ Bản sao lưu của .env cũng chứa NGUYÊN khoá production — OPENAI_API_KEY,
+# SUPABASE_SERVICE_ROLE_KEY (bỏ qua RLS), DATABASE_URL kèm mật khẩu. Chỉ chặn
+# `.env` thôi thì một file `.env.bak` nằm cạnh vẫn lọt vào `git add -A`.
+.env.*
+!.env.example
+
+# Khoá dịch vụ — KHÔNG BAO GIỜ commit
+service_account.json
+*-service-account*.json
+*credentials*.json
+*.pem
+*.key
+
+# IDE & AI Tool Configs
+.vscode/
+.idea/
+.claude/
+.codex/
+.cursor/
+.gemini/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dữ liệu lớn — CHỈ thư mục data/ ở gốc repo.
+# Dấu / ở đầu là bắt buộc: nếu viết "data/" thì git bỏ qua MỌI thư mục tên data
+# ở mọi cấp, nuốt luôn cả src/data/ (module RAG) và làm CI đỏ vì thiếu module.
+/data/*
+!/data/raw/
+/data/raw/*
+
+# NGOẠI LỆ: 11 file tài liệu kiến thức PHẢI nằm trong repo (60 KB).
+#
+# Chúng là nguồn cho `python -m src.cli ingest` và cho trang /tai-lieu. Để ngoài
+# repo thì: CI không có gì để đọc (4 test đỏ), Render deploy xong trang tài liệu
+# rỗng, và clone mới không nạp lại được kho — tài liệu chỉ còn tồn tại trong
+# Qdrant, tức không ai review được và mất hẳn nếu collection hỏng. Đúng cái bẫy
+# đã làm mất `phap-ly-thu-tuc`, phải ghép lại từ chunk mới cứu được.
+#
+# Quy tắc ở CLAUDE.md: `doc_id` trong Qdrant phải luôn có file nguồn trong repo.
+!/data/raw/knowledge/
+*.db
+*.sqlite3
+
+# Output tự động của script eval — đổi mỗi lần chạy, không commit để tránh
+# nhiễu git history. Số liệu quan trọng đã tóm tắt có phân tích trong
+# eval/results/report.md (file đó VẪN track bình thường).
+/eval/results/retrieval_eval.json
+/eval/results/knowledge_chunks.json
+/eval/results/meeyland_chunks.json
+/eval/results/batdongsan_chunks.json
+/eval/results/inventory_chunks.json
+/eval/results/manual_eval_results.json
+/eval/results/answer_eval_*.json
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+htmlcov/
+.coverage
+coverage.xml
+
+# Docker
+docker-compose.override.yml
+
+# Node (frontend)
+node_modules/
+.next/
+out/
+.nuxt/
+
+# Build
+*.pyc
+*.pyo
+
+# AI logs — tracked structure, ignored content
+.ai-log/*.jsonl
+.ai-log/archive/
+
+# Cấu hình hook AI log của từng AI tool — MỖI MÁY MỖI KHÁC, không commit.
+# Mỗi người tự tạo theo mẫu trong .agents/rules/ai-log-hook.md. Trước đây các
+# file này được theo dõi và gây conflict ở gần như mọi PR vì bốn người vá cùng
+# một chỗ trên bốn máy khác nhau.
+.claude/settings.json
+.claude/settings.local.json
+.codex/hooks.json
+.cursor/hooks.json
+.gemini/settings.json
+.github/hooks/hooks.json
+
+# Frontend build output
+interface/frontend/.next/
+interface/frontend/out/
+interface/frontend/node_modules/
+interface/frontend/.env.local
+interface/frontend/dist/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Windows tạo file rác tên NUL khi shell POSIX chạy `2>NUL` — nó là tên thiết bị
+# trên Windows nhưng thành file thật dưới Git Bash. Luôn rỗng, không bao giờ có
+# nghĩa gì.
+NUL
