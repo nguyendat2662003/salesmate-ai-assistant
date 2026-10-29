@@ -139,8 +139,7 @@ python -m src.cli eval retrieval         # đo trên bộ câu hỏi vàng
 | `batdongsan` | Tin batdongsan.com.vn lưu tay | public | `data/raw/*.html` |
 | `knowledge` | Chính sách · pháp lý · tiện ích | tuỳ file | `data/raw/knowledge/**.md` |
 
-`data/raw/` nằm trong `.gitignore` nên **không có trong repo** — xin Viet qua
-Drive trước khi chạy ba nguồn cuối. File `.md` bắt buộc có front-matter
+File `.md` bắt buộc có front-matter
 `title`/`section`/`visibility` ở đầu; xem `src/data/sources/knowledge_docs.py`.
 
 > Nạp dữ liệu **bắt buộc có `OPENAI_API_KEY` hợp lệ**. Trước đây script tự rơi
@@ -276,8 +275,6 @@ nhau — xem [ADR-004](docs/adr/ADR-004-module-contracts.md).
 ```bash
 make cov
 ```
-
----
 
 ---
 
