@@ -4,8 +4,6 @@
 > lý AI** dạng widget nổi tư vấn giá, tìm bất động sản, giải đáp pháp lý và soạn
 > tin đăng.
 
-**Team P-055** · VinUni AI20K Build Phase — Cohort 3
-
 ---
 
 ## Vấn đề
@@ -281,25 +279,12 @@ make cov
 
 ---
 
-## Team
-
-| Thành viên | Phụ trách | Thư mục sở hữu |
-|---|---|---|
-| **huy** (lead) | Kiến trúc · Frontend | `interface/frontend/` · `src/core/` |
-| **dat** | Data handling (RAG) | `src/data/` |
-| **viet** | AI core (agent) | `src/agents/` |
-| **phuc** | Interface (backend API) | `src/api/` |
-
-Quy trình: nhánh cá nhân → PR vào `develop` → merge vào `main`.
-Commit theo chuẩn `feat:` `fix:` `docs:` `test:` `refactor:`.
-
 ---
 
 ## Tài liệu
 
 | Tài liệu | Nội dung |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Điểm vào cho cả team và AI coding assistant |
 | [`docs/RUN.md`](docs/RUN.md) | Chạy trên máy mình |
 | [`docs/architecture_diagram.md`](docs/architecture_diagram.md) | Sơ đồ kiến trúc, luồng agent, luồng dữ liệu |
 | [`docs/adr/`](docs/adr/README.md) | Quyết định kiến trúc và lý do |
